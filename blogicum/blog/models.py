@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 
+
 User = get_user_model()
 
 
@@ -59,6 +60,12 @@ class Post(PublishCreateModel):
                                  verbose_name='Местоположение')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL,
                                  null=True, verbose_name='Категория')
+    image = models.ImageField(blank=True,
+                              verbose_name='Фото',
+                              upload_to='posts_images')
+    @property
+    def comment_count(self):
+        return self.comments.count()
 
     class Meta:
         verbose_name = 'публикация'
@@ -66,3 +73,29 @@ class Post(PublishCreateModel):
 
     def __str__(self):
         return self.title
+
+
+class Comment(PublishCreateModel):
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name='comments',
+        verbose_name='Публикация'
+    )
+    author = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        verbose_name='Автор комментария'
+    )
+    text = models.TextField(
+        max_length=1000,
+        verbose_name='Текст комментария'
+    )
+
+    class Meta:
+        verbose_name = 'комментарий'
+        verbose_name_plural = 'Комментарии'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Комментарий {self.author} к {self.post}'
