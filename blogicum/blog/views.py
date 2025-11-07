@@ -8,6 +8,8 @@ from django.contrib.auth.decorators import login_required
 from .models import Post, Category, Comment
 from .forms import UserEditForm, PostForm, CommentForm, CommentUpdateForm
 from django.core.paginator import Paginator
+from django.http import Http404
+from django.db import models
 
 
 class UserDetailView(DetailView):
@@ -20,8 +22,21 @@ class UserDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        user_posts = Post.objects.filter(author=self.object).order_by('-pub_date')
+        # Текущий пользователь видит ВСЕ посты профиля
+        if self.request.user == self.object:
+            user_posts = Post.objects.filter(author=self.object)
+        else:
+            # Другие пользователи видят ТОЛЬКО опубликованные посты профиля
+            user_posts = Post.objects.filter(
+                author=self.object,
+                is_published=True,
+                pub_date__lte=timezone.now()
+            ).filter(
+                models.Q(category__is_published=True) |
+                models.Q(category__isnull=True)
+            )
         
+        user_posts = user_posts.order_by('-pub_date')
         paginator = Paginator(user_posts, 10)
         page_number = self.request.GET.get('page')
         page_obj = paginator.get_page(page_number)
@@ -49,8 +64,20 @@ class PostListView(ListView):
     paginate_by = 10
     template_name = 'blog/index.html'
 
+    def get_queryset(self):
+        # ТОЛЬКО посты, которые соответствуют всем условиям:
+        queryset = Post.objects.filter(
+            is_published=True,                    # Не сняты с публикации
+            pub_date__lte=timezone.now(),         # Не отложенные публикации
+        ).filter(
+            models.Q(category__is_published=True) |  # Категория опубликована
+            models.Q(category__isnull=True)          # Или категории нет
+        )
+        
+        return queryset.order_by('-pub_date')
 
-class PostCreateView(CreateView):
+
+class PostCreateView(LoginRequiredMixin, CreateView):
     model = Post
     form_class = PostForm
     template_name = 'blog/create.html'
@@ -61,8 +88,8 @@ class PostCreateView(CreateView):
         return super().form_valid(form)
     
     def get_success_url(self):
-        # После создания перенаправляем на страницу поста или профиль
-        return reverse_lazy('blog:post_detail', kwargs={'pk': self.object.id})
+        # Перенаправляем на страницу профиля пользователя
+        return reverse_lazy('blog:profile', kwargs={'username': self.request.user.username})
 
 class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     model = Post
@@ -70,33 +97,78 @@ class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     template_name = 'blog/create.html'
 
     def test_func(self):
-        # Проверяем, что пользователь является автором поста
         post = self.get_object()
-        return self.request.user == post.author
+        # Разрешаем редактирование автору ИЛИ администратору
+        return self.request.user == post.author or self.request.user.is_staff
 
     def get_success_url(self):
-        return reverse_lazy('blog:post_detail', kwargs={'pk': self.object.id})
+        return reverse_lazy('blog:post_detail', kwargs={'pk': self.object.pk})
 
-class PostDeleteView(DeleteView):
+    def handle_no_permission(self):
+        """Обрабатываем случаи, когда пользователь не авторизован или не автор/админ"""
+        if not self.request.user.is_authenticated:
+            return redirect('blog:post_detail', pk=self.kwargs.get('pk'))
+        else:
+            return redirect('blog:post_detail', pk=self.kwargs.get('pk'))
+
+
+class PostDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     model = Post
     template_name = 'blog/create.html'
 
+    def test_func(self):
+        post = self.get_object()
+        # Разрешаем удаление автору ИЛИ администратору
+        return self.request.user == post.author or self.request.user.is_staff
+
     def get_success_url(self):
-        # После удаления перенаправляем на профиль текущего пользователя
         return reverse_lazy('blog:profile', kwargs={'username': self.request.user.username})
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update['is_delete_page'] = True
+        if 'form' in context:
+            del context['form']
+        return context
 
 
 class PostDetailView(DetailView):
     model = Post
     template_name = 'blog/detail.html'
-    success_url = reverse_lazy('blog:profile')
+
+    def get_object(self, queryset=None):
+        post = super().get_object(queryset)
+        
+        # Проверяем, доступен ли пост пользователю
+        if not self.is_post_accessible(post):
+            from django.http import Http404
+            raise Http404("Публикация не найдена")
+        return post
+
+    def is_post_accessible(self, post):
+        # Автор поста имеет доступ ко всему
+        if post.author == self.request.user:
+            return True
+        
+        # Пост должен быть опубликован
+        if not post.is_published:
+            return False
+        
+        # Категория должна быть опубликована (если она есть)
+        if post.category and not post.category.is_published:
+            return False
+        
+        # Дата публикации должна быть в прошлом
+        if post.pub_date > timezone.now():
+            return False
+        
+        return True
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Добавляем форму для комментариев
+        context['is_future_post'] = self.object.pub_date > timezone.now()
         context['form'] = CommentForm()
-        # Добавляем комментарии
-        context['comments'] = self.object.comments.all()
+        context['comments'] = self.object.comments.select_related('author').order_by('created_at')
         return context
 
 
@@ -109,15 +181,19 @@ class CategoryPostsView(ListView):
         self.category = get_object_or_404(
             Category,
             slug=self.kwargs['category_slug'],
-            is_published=True
+            is_published=True  # Категория должна быть опубликована
         )
-        return Post.objects.select_related(
+        
+        # ТОЛЬКО опубликованные посты без исключений для авторов
+        queryset = Post.objects.select_related(
             'author', 'location', 'category'
         ).filter(
-            is_published=True,
-            pub_date__lt=timezone.now(),
-            category=self.category
-        ).order_by('-pub_date')
+            category=self.category,
+            is_published=True,        # Не сняты с публикации
+            pub_date__lte=timezone.now()  # Не отложенные публикации
+        )
+        
+        return queryset.order_by('-pub_date')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -189,4 +265,9 @@ class CommentDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['post'] = get_object_or_404(Post, pk=self.kwargs['post_pk'])
+        # УДАЛЯЕМ ФОРМУ ИЗ КОНТЕКСТА ДЛЯ DeleteView
+        if 'form' in context:
+            del context['form']
+        # Добавляем флаг, что это страница удаления
+        context['is_delete_page'] = True
         return context
