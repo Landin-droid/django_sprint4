@@ -22,11 +22,9 @@ class UserDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Текущий пользователь видит ВСЕ посты профиля
         if self.request.user == self.object:
             user_posts = Post.objects.filter(author=self.object)
         else:
-            # Другие пользователи видят ТОЛЬКО опубликованные посты профиля
             user_posts = Post.objects.filter(
                 author=self.object,
                 is_published=True,
@@ -65,13 +63,12 @@ class PostListView(ListView):
     template_name = 'blog/index.html'
 
     def get_queryset(self):
-        # ТОЛЬКО посты, которые соответствуют всем условиям:
         queryset = Post.objects.filter(
-            is_published=True,                    # Не сняты с публикации
-            pub_date__lte=timezone.now(),         # Не отложенные публикации
+            is_published=True,
+            pub_date__lte=timezone.now(), 
         ).filter(
-            models.Q(category__is_published=True) |  # Категория опубликована
-            models.Q(category__isnull=True)          # Или категории нет
+            models.Q(category__is_published=True) |
+            models.Q(category__isnull=True)
         )
         
         return queryset.order_by('-pub_date')
@@ -83,13 +80,12 @@ class PostCreateView(LoginRequiredMixin, CreateView):
     template_name = 'blog/create.html'
 
     def form_valid(self, form):
-        # Автоматически устанавливаем текущего пользователя как автора
         form.instance.author = self.request.user
         return super().form_valid(form)
     
     def get_success_url(self):
-        # Перенаправляем на страницу профиля пользователя
         return reverse_lazy('blog:profile', kwargs={'username': self.request.user.username})
+
 
 class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     model = Post
@@ -98,7 +94,6 @@ class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
 
     def test_func(self):
         post = self.get_object()
-        # Разрешаем редактирование автору ИЛИ администратору
         return self.request.user == post.author or self.request.user.is_staff
 
     def get_success_url(self):
@@ -118,7 +113,6 @@ class PostDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
 
     def test_func(self):
         post = self.get_object()
-        # Разрешаем удаление автору ИЛИ администратору
         return self.request.user == post.author or self.request.user.is_staff
 
     def get_success_url(self):
@@ -139,26 +133,21 @@ class PostDetailView(DetailView):
     def get_object(self, queryset=None):
         post = super().get_object(queryset)
         
-        # Проверяем, доступен ли пост пользователю
         if not self.is_post_accessible(post):
             from django.http import Http404
             raise Http404("Публикация не найдена")
         return post
 
     def is_post_accessible(self, post):
-        # Автор поста имеет доступ ко всему
         if post.author == self.request.user:
             return True
-        
-        # Пост должен быть опубликован
+
         if not post.is_published:
             return False
         
-        # Категория должна быть опубликована (если она есть)
         if post.category and not post.category.is_published:
             return False
         
-        # Дата публикации должна быть в прошлом
         if post.pub_date > timezone.now():
             return False
         
@@ -181,16 +170,15 @@ class CategoryPostsView(ListView):
         self.category = get_object_or_404(
             Category,
             slug=self.kwargs['category_slug'],
-            is_published=True  # Категория должна быть опубликована
+            is_published=True
         )
         
-        # ТОЛЬКО опубликованные посты без исключений для авторов
         queryset = Post.objects.select_related(
             'author', 'location', 'category'
         ).filter(
             category=self.category,
-            is_published=True,        # Не сняты с публикации
-            pub_date__lte=timezone.now()  # Не отложенные публикации
+            is_published=True,
+            pub_date__lte=timezone.now()
         )
         
         return queryset.order_by('-pub_date')
@@ -220,6 +208,7 @@ class CommentCreateView(LoginRequiredMixin, CreateView):
         context['post'] = get_object_or_404(Post, pk=self.kwargs['post_pk'])
         return context
 
+
 class CommentUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     model = Comment
     form_class = CommentUpdateForm
@@ -244,6 +233,7 @@ class CommentUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
         context['post'] = get_object_or_404(Post, pk=self.kwargs['post_pk'])
         return context
 
+
 class CommentDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     model = Comment
     template_name = 'blog/comment.html'
@@ -265,9 +255,7 @@ class CommentDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['post'] = get_object_or_404(Post, pk=self.kwargs['post_pk'])
-        # УДАЛЯЕМ ФОРМУ ИЗ КОНТЕКСТА ДЛЯ DeleteView
         if 'form' in context:
             del context['form']
-        # Добавляем флаг, что это страница удаления
         context['is_delete_page'] = True
         return context
