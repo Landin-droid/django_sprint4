@@ -21,7 +21,6 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include, reverse_lazy
-from blog import views
 
 
 urlpatterns = [
@@ -30,7 +29,7 @@ urlpatterns = [
     path('pages/', include('pages.urls')),
     path('auth/', include('django.contrib.auth.urls')),
     path(
-        'auth/registration/', 
+        'auth/registration/',
         CreateView.as_view(
             template_name='registration/registration_form.html',
             form_class=UserCreationForm,

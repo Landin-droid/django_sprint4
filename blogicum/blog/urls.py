@@ -4,8 +4,7 @@ from .views import (
     PostCreateView, PostUpdateView, PostDeleteView,
     PostDetailView, CategoryPostsView, CommentCreateView,
     CommentUpdateView, CommentDeleteView
-    )
-from . import views
+)
 
 
 app_name = "blog"
@@ -20,7 +19,10 @@ urlpatterns = [
          name="category_posts"),
     path('profile/edit/', UserUpdateView.as_view(), name='edit_profile'),
     path('profile/<str:username>/', UserDetailView.as_view(), name='profile'),
-    path("posts/<int:post_pk>/comment/", CommentCreateView.as_view(), name="add_comment"),
-    path("posts/<int:post_pk>/edit_comment/<int:comment_pk>/", CommentUpdateView.as_view(), name="edit_comment"),
-    path("posts/<int:post_pk>/delete_comment/<int:comment_pk>/", CommentDeleteView.as_view(), name="delete_comment"),
+    path("posts/<int:post_pk>/comment/", CommentCreateView.as_view(),
+         name="add_comment"),
+    path("posts/<int:post_pk>/edit_comment/<int:comment_pk>/",
+         CommentUpdateView.as_view(), name="edit_comment"),
+    path("posts/<int:post_pk>/delete_comment/<int:comment_pk>/",
+         CommentDeleteView.as_view(), name="delete_comment"),
 ]

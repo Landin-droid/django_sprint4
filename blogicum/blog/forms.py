@@ -20,22 +20,21 @@ class UserEditForm(forms.ModelForm):
 
 class CategoryForm(forms.ModelForm):
     class Meta:
-      model = Category
-      fields = '__all__'
+        model = Category
+        fields = '__all__'
 
 
 class LocationForm(forms.ModelForm):
     class Meta:
-      model = Location
-      fields = '__all__'
+        model = Location
+        fields = '__all__'
 
 
 class PostForm(forms.ModelForm):
     class Meta:
-      model = Post
-      fields = ['title', 'text', 'pub_date', 'location', 'category', 'image']
-
-      widgets = {
+        model = Post
+        fields = ['title', 'text', 'pub_date', 'location', 'category', 'image']
+        widgets = {
             'pub_date': forms.DateTimeInput(
                 attrs={
                     'type': 'datetime-local',
@@ -44,7 +43,7 @@ class PostForm(forms.ModelForm):
                 format='%Y-%m-%dT%H:%M'
             )
         }
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pub_date:
@@ -65,6 +64,7 @@ class CommentForm(forms.ModelForm):
         labels = {
             'text': 'Текст комментария'
         }
+
 
 class CommentUpdateForm(forms.ModelForm):
     class Meta:

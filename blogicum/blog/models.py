@@ -63,6 +63,7 @@ class Post(PublishCreateModel):
     image = models.ImageField(blank=True,
                               verbose_name='Фото',
                               upload_to='posts_images')
+
     @property
     def comment_count(self):
         return self.comments.count()
